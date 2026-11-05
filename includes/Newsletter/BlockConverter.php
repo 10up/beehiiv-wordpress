@@ -33,14 +33,16 @@ defined( 'ABSPATH' ) || exit;
  * - `core/pullquote` — `convert_pullquote_block()`
  * - `core/embed` — `convert_embed_block()`
  * - `core/media-text` — `convert_media_text_block()` (beehiiv `columns` block)
+ * - `core/columns` / inner `core/column` — `convert_columns_block()` (beehiiv `columns` block)
  * - `core/buttons` / inner `core/button` — `convert_buttons_block()`, `convert_button_block()`
  * - `core/separator` — beehiiv `content_break`
  * - `core/more` — snippet newsletters only; beehiiv Read More `button` via `convert_more_block()`
  * - `beehiiv/advertisement` — beehiiv `advertisement` block via `convert_advertisement_block()`
  *
- * Layout blocks (`core/group`, `core/columns`, etc.) are skipped at the top level.
- * `convert_columns_block()` exists for internal reuse (e.g. `core/media-text`) and is
- * not wired into the main block walk yet. Snippet mode stops at `core/more`.
+ * Other layout blocks (`core/group`, etc.) are skipped at the top level. A
+ * `core/columns` block inside a column is never kept in that column: the blocks
+ * inside its columns are converted as top-level blocks and placed after the
+ * outermost columns block. Snippet mode stops at `core/more`.
  *
  * @since 1.0.0
  */
@@ -87,14 +89,14 @@ final class BlockConverter {
 	 * Recursively convert parsed WordPress blocks to beehiiv blocks.
 	 *
 	 * @param array<int, array<string, mixed>> $wp_blocks                  Parsed blocks.
-	 * @param WP_Post                          $post_object                Post object.
+	 * @param WP_Post|null                     $post_object                Post object. Only read in snippet mode.
 	 * @param bool                             $is_send_newsletter_snippet Whether snippet mode is enabled.
 	 * @return array<int, array<string, mixed>>
 	 * @since 1.0.0
 	 */
 	private static function convert_blocks(
 		array $wp_blocks,
-		WP_Post $post_object,
+		?WP_Post $post_object,
 		bool $is_send_newsletter_snippet
 	): array {
 		$beehiiv_blocks = [];
@@ -124,6 +126,28 @@ final class BlockConverter {
 			if ( 'core/list' === $block_name ) {
 				$list_blocks    = self::convert_list_block( $wp_block );
 				$beehiiv_blocks = array_merge( $beehiiv_blocks, $list_blocks );
+				continue;
+			}
+
+			if ( 'core/columns' === $block_name || 'core/media-text' === $block_name ) {
+				$nested_columns_wp_blocks = [];
+				$beehiiv_block            = 'core/columns' === $block_name
+					? self::convert_columns_block( $wp_block, $nested_columns_wp_blocks )
+					: self::convert_media_text_block( $wp_block, $nested_columns_wp_blocks );
+
+				if ( ! empty( $beehiiv_block ) ) {
+					$beehiiv_blocks[] = $beehiiv_block;
+				}
+
+				// Content of Columns blocks nested inside a column goes to the top level.
+				// Like any column content, a core/more block there does not end the conversion.
+				if ( ! empty( $nested_columns_wp_blocks ) ) {
+					$beehiiv_blocks = array_merge(
+						$beehiiv_blocks,
+						self::convert_blocks( $nested_columns_wp_blocks, $post_object, false )
+					);
+				}
+
 				continue;
 			}
 
@@ -164,8 +188,6 @@ final class BlockConverter {
 				return self::convert_pullquote_block( $wp_block );
 			case 'core/embed':
 				return self::convert_embed_block( $wp_block );
-			case 'core/media-text':
-				return self::convert_media_text_block( $wp_block );
 			case 'beehiiv/advertisement':
 				return self::convert_advertisement_block( $wp_block );
 		}
@@ -520,14 +542,19 @@ final class BlockConverter {
 	/**
 	 * Convert a core/columns block to a beehiiv columns block.
 	 *
-	 * Not included in the top-level newsletter block walk yet. Intended for
-	 * internal reuse by `convert_media_text_block()` and future direct columns support.
+	 * Builds one column per core/column, for any number of columns. Each column's
+	 * inner blocks get the same handling as the Media & Text content column. A
+	 * column whose inner blocks all fail to convert is left out.
 	 *
-	 * @param array<string, mixed> $wp_block Parsed block.
+	 * @param array<string, mixed>             $wp_block                 Parsed block.
+	 * @param array<int, array<string, mixed>> $nested_columns_wp_blocks Receives the parsed inner
+	 *                                                                   blocks of Columns blocks nested
+	 *                                                                   inside a column, in order, for
+	 *                                                                   the caller to convert at top level.
 	 * @return array<string, mixed>
 	 * @since 1.0.0
 	 */
-	public static function convert_columns_block( array $wp_block ): array {
+	public static function convert_columns_block( array $wp_block, array &$nested_columns_wp_blocks = [] ): array {
 		if ( 'core/columns' !== ( $wp_block['blockName'] ?? '' ) ) {
 			return [];
 		}
@@ -547,7 +574,10 @@ final class BlockConverter {
 			}
 
 			$column_inner_blocks = $column_block['innerBlocks'] ?? [];
-			$column_blocks       = self::convert_layout_block_inner_blocks( $column_inner_blocks );
+			$column_blocks       = self::convert_layout_block_inner_blocks(
+				$column_inner_blocks,
+				$nested_columns_wp_blocks
+			);
 
 			if ( empty( $column_blocks ) ) {
 				continue;
@@ -571,13 +601,20 @@ final class BlockConverter {
 	 * Convert nested inner blocks inside a layout block to beehiiv blocks.
 	 *
 	 * Used by layout blocks such as columns and media-text. Unsupported blocks are
-	 * skipped; snippet-only blocks are omitted.
+	 * skipped; snippet-only blocks are omitted. A nested core/columns block is never
+	 * placed in the column: the inner blocks of its columns are collected for the
+	 * caller to convert at top level.
 	 *
-	 * @param array<int, array<string, mixed>> $wp_blocks Parsed inner blocks.
+	 * @param array<int, array<string, mixed>> $wp_blocks                Parsed inner blocks.
+	 * @param array<int, array<string, mixed>> $nested_columns_wp_blocks Receives the parsed inner
+	 *                                                                   blocks of nested Columns blocks.
 	 * @return array<int, array<string, mixed>>
 	 * @since 1.0.0
 	 */
-	private static function convert_layout_block_inner_blocks( array $wp_blocks ): array {
+	private static function convert_layout_block_inner_blocks(
+		array $wp_blocks,
+		array &$nested_columns_wp_blocks
+	): array {
 		$beehiiv_blocks = [];
 
 		foreach ( $wp_blocks as $wp_block ) {
@@ -586,6 +623,29 @@ final class BlockConverter {
 			}
 
 			$block_name = (string) $wp_block['blockName'];
+
+			if ( 'core/columns' === $block_name ) {
+				foreach ( $wp_block['innerBlocks'] ?? [] as $nested_column_block ) {
+					if ( 'core/column' !== ( $nested_column_block['blockName'] ?? '' ) ) {
+						continue;
+					}
+
+					$nested_columns_wp_blocks = array_merge(
+						$nested_columns_wp_blocks,
+						$nested_column_block['innerBlocks'] ?? []
+					);
+				}
+				continue;
+			}
+
+			if ( 'core/media-text' === $block_name ) {
+				$media_text_block = self::convert_media_text_block( $wp_block, $nested_columns_wp_blocks );
+
+				if ( ! empty( $media_text_block ) ) {
+					$beehiiv_blocks[] = $media_text_block;
+				}
+				continue;
+			}
 
 			if ( 'core/buttons' === $block_name ) {
 				$beehiiv_blocks = array_merge( $beehiiv_blocks, self::convert_buttons_block( $wp_block ) );
@@ -961,11 +1021,15 @@ final class BlockConverter {
 	 * inner blocks. Blocks with video media are omitted entirely. Respects media
 	 * position, column widths, vertical alignment, and mobile stacking.
 	 *
-	 * @param array<string, mixed> $wp_block Parsed block.
+	 * @param array<string, mixed>             $wp_block                 Parsed block.
+	 * @param array<int, array<string, mixed>> $nested_columns_wp_blocks Receives the parsed inner
+	 *                                                                   blocks of Columns blocks nested
+	 *                                                                   in the content column, in order,
+	 *                                                                   for the caller to convert at top level.
 	 * @return array<string, mixed>
 	 * @since 1.0.0
 	 */
-	public static function convert_media_text_block( array $wp_block ): array {
+	public static function convert_media_text_block( array $wp_block, array &$nested_columns_wp_blocks = [] ): array {
 		$attrs        = $wp_block['attrs'] ?? [];
 		$inner_html   = (string) ( $wp_block['innerHTML'] ?? '' );
 		$inner_blocks = $wp_block['innerBlocks'] ?? [];
@@ -979,16 +1043,27 @@ final class BlockConverter {
 		$media_width     = MediaTextBlockConverter::resolve_media_width( $attrs, $inner_html );
 		$content_width   = max( 1, min( 100, 100 - $media_width ) );
 
-		$media_blocks   = self::convert_media_text_media_blocks( $attrs, $inner_html );
-		$content_blocks = self::convert_layout_block_inner_blocks( $inner_blocks );
+		$media_blocks          = self::convert_media_text_media_blocks( $attrs, $inner_html );
+		$content_nested_blocks = [];
+		$content_blocks        = self::convert_layout_block_inner_blocks( $inner_blocks, $content_nested_blocks );
 
 		if ( empty( $content_blocks ) && '' !== $inner_html ) {
 			$content_html = MediaTextBlockConverter::extract_content_inner_html( $inner_html );
 
 			if ( '' !== $content_html ) {
-				$content_blocks = self::convert_layout_block_inner_blocks( parse_blocks( $content_html ) );
+				$fallback_nested_blocks = [];
+				$content_blocks         = self::convert_layout_block_inner_blocks(
+					parse_blocks( $content_html ),
+					$fallback_nested_blocks
+				);
+
+				if ( ! empty( $content_blocks ) ) {
+					$content_nested_blocks = $fallback_nested_blocks;
+				}
 			}
 		}
+
+		$nested_columns_wp_blocks = array_merge( $nested_columns_wp_blocks, $content_nested_blocks );
 
 		$media_column   = [];
 		$content_column = [];
