@@ -11,6 +11,7 @@ export const META_BEEHIIV_POST_TEMPLATE_ID = '_beehiiv_post_template_id';
 export const META_BEEHIIV_PUBLICATION_ID = '_beehiiv_publication_id';
 export const META_BEEHIIV_POST_ID = '_beehiiv_post_id';
 export const META_BEEHIIV_SCHEDULED_AT = '_beehiiv_scheduled_at';
+export const META_BEEHIIV_GROUP_SECTIONS = '_beehiiv_group_sections';
 export const META_NEWSLETTER_ERROR = '_beehiiv_newsletter_error';
 export const META_NEWSLETTER_ERROR_TYPE = '_beehiiv_newsletter_error_type';
 export const META_NEWSLETTER_TITLE = '_beehiiv_newsletter_title';

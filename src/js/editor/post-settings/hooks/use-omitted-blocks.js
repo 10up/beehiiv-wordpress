@@ -3,8 +3,16 @@
  */
 import { useSelect } from '@wordpress/data';
 import { store as blockEditorStore } from '@wordpress/block-editor';
+import { store as editorStore } from '@wordpress/editor';
 
-import { isOmittedFromNewsletter } from '../../../shared/supported-blocks';
+import {
+	isOmittedFromNewsletter,
+	sendsGroupsAsSections,
+} from '../../../shared/supported-blocks';
+import {
+	META_BEEHIIV_GROUP_SECTIONS,
+	META_BEEHIIV_POST_ID,
+} from '../../../shared/meta';
 
 /**
  * @typedef {import('@wordpress/blocks').WPBlock} WPBlock
@@ -21,11 +29,12 @@ import { isOmittedFromNewsletter } from '../../../shared/supported-blocks';
  *
  * @param {BlockAncestor[]} ancestors     Root-to-parent chain for the block.
  * @param {string}          blockClientId Client ID of the unsupported block.
+ * @param {boolean}         usesSections  Whether the post sends Groups as sections.
  * @return {string} Client ID of the omitted block to highlight.
  */
-function resolveOmittedBlockTarget( ancestors, blockClientId ) {
+function resolveOmittedBlockTarget( ancestors, blockClientId, usesSections ) {
 	for ( const ancestor of ancestors ) {
-		if ( isOmittedFromNewsletter( ancestor ) ) {
+		if ( isOmittedFromNewsletter( ancestor, usesSections ) ) {
 			return ancestor.clientId;
 		}
 	}
@@ -36,10 +45,11 @@ function resolveOmittedBlockTarget( ancestors, blockClientId ) {
 /**
  * Collect client IDs for blocks omitted from the newsletter.
  *
- * @param {WPBlock[]} blocks Parsed top-level blocks.
+ * @param {WPBlock[]} blocks       Parsed top-level blocks.
+ * @param {boolean}   usesSections Whether the post sends Groups as sections.
  * @return {Set<string>} Client IDs of omitted blocks to highlight.
  */
-export function collectOmittedBlockClientIds( blocks ) {
+export function collectOmittedBlockClientIds( blocks, usesSections = false ) {
 	/** @type {Set<string>} */
 	const targets = new Set();
 
@@ -49,9 +59,13 @@ export function collectOmittedBlockClientIds( blocks ) {
 	 */
 	function visit( blockList, ancestors = [] ) {
 		for ( const block of blockList ) {
-			if ( isOmittedFromNewsletter( block ) ) {
+			if ( isOmittedFromNewsletter( block, usesSections ) ) {
 				targets.add(
-					resolveOmittedBlockTarget( ancestors, block.clientId )
+					resolveOmittedBlockTarget(
+						ancestors,
+						block.clientId,
+						usesSections
+					)
 				);
 				continue;
 			}
@@ -71,6 +85,23 @@ export function collectOmittedBlockClientIds( blocks ) {
 }
 
 /**
+ * Whether the sync sends the current post's Group blocks as beehiiv sections.
+ *
+ * Reads the same post meta record the server sync uses.
+ *
+ * @param {Function} select Data registry select.
+ * @return {boolean} True when Groups are sent as sections.
+ */
+function selectSendsGroupsAsSections( select ) {
+	const meta = select( editorStore ).getEditedPostAttribute( 'meta' );
+
+	return sendsGroupsAsSections(
+		meta?.[ META_BEEHIIV_GROUP_SECTIONS ],
+		meta?.[ META_BEEHIIV_POST_ID ]
+	);
+}
+
+/**
  * Number of blocks that will be omitted from the newsletter.
  *
  * @return {number} Count of omitted top-level block targets.
@@ -79,7 +110,10 @@ export function useOmittedBlockCount() {
 	return useSelect( ( select ) => {
 		const blocks = select( blockEditorStore ).getBlocks();
 
-		return collectOmittedBlockClientIds( blocks ).size;
+		return collectOmittedBlockClientIds(
+			blocks,
+			selectSendsGroupsAsSections( select )
+		).size;
 	}, [] );
 }
 
@@ -94,7 +128,8 @@ export function useIsOmittedBlock( clientId ) {
 		( select ) => {
 			const blockEditor = select( blockEditorStore );
 			const targets = collectOmittedBlockClientIds(
-				blockEditor.getBlocks()
+				blockEditor.getBlocks(),
+				selectSendsGroupsAsSections( select )
 			);
 
 			if ( ! targets.has( clientId ) ) {

@@ -12,8 +12,11 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Single source of truth for which WordPress blocks are included in newsletters.
  *
- * Layout blocks such as `core/group` and `core/columns` are not supported. They
- * and all of their inner blocks are omitted from the newsletter payload.
+ * Layout blocks such as `core/columns` and `core/column` are not supported. They
+ * and all of their inner blocks are omitted from the newsletter payload, also
+ * inside a section. `core/group` ({@see SupportedBlocks::SECTION_BLOCK}) converts
+ * to a beehiiv `section` for posts that use sections (see `SectionConversion`);
+ * other posts omit it like any other layout block.
  *
  * @since 1.0.0
  */
@@ -59,16 +62,27 @@ final class SupportedBlocks {
 	];
 
 	/**
+	 * Block converted to a beehiiv `section` for posts that use sections.
+	 *
+	 * Not in {@see SupportedBlocks::BLOCKS}: posts linked before the section change
+	 * still omit it.
+	 *
+	 * @since x.x.x
+	 */
+	public const SECTION_BLOCK = 'core/group';
+
+	/**
 	 * Block support config for the block editor (localized to JavaScript).
 	 *
-	 * @return array<string, array<int, string>>
+	 * @return array<string, array<int, string>|string>
 	 * @since 1.0.0
 	 */
 	public static function get_editor_config(): array {
 		return [
-			'supported'   => self::BLOCKS,
-			'nestedOnly'  => self::NESTED_ONLY,
-			'snippetOnly' => self::SNIPPET_ONLY,
+			'supported'    => self::BLOCKS,
+			'nestedOnly'   => self::NESTED_ONLY,
+			'snippetOnly'  => self::SNIPPET_ONLY,
+			'sectionBlock' => self::SECTION_BLOCK,
 		];
 	}
 

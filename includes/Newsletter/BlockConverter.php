@@ -38,9 +38,12 @@ defined( 'ABSPATH' ) || exit;
  * - `core/more` — snippet newsletters only; beehiiv Read More `button` via `convert_more_block()`
  * - `beehiiv/advertisement` — beehiiv `advertisement` block via `convert_advertisement_block()`
  *
- * Layout blocks (`core/group`, `core/columns`, etc.) are skipped at the top level.
- * `convert_columns_block()` exists for internal reuse (e.g. `core/media-text`) and is
- * not wired into the main block walk yet. Snippet mode stops at `core/more`.
+ * - `core/group` — beehiiv `section` via `convert_section_block()`, for posts that
+ *   use sections (see `SectionConversion`). Other posts leave Groups out, as before.
+ *
+ * Other layout blocks (`core/columns`, `core/column`, etc.) are skipped, also inside
+ * a section. `convert_columns_block()` exists for internal reuse (e.g. `core/media-text`)
+ * and is not wired into the main block walk yet. Snippet mode stops at `core/more`.
  *
  * @since 1.0.0
  */
@@ -70,10 +73,13 @@ final class BlockConverter {
 			true
 		);
 
+		$is_stopped       = false;
 		$converted_blocks = self::convert_blocks(
 			$wp_blocks,
 			$post_object,
-			$is_send_newsletter_snippet
+			$is_send_newsletter_snippet,
+			SectionConversion::uses_sections( $post_object->ID ),
+			$is_stopped
 		);
 
 		return array_values(
@@ -89,15 +95,20 @@ final class BlockConverter {
 	 * @param array<int, array<string, mixed>> $wp_blocks                  Parsed blocks.
 	 * @param WP_Post                          $post_object                Post object.
 	 * @param bool                             $is_send_newsletter_snippet Whether snippet mode is enabled.
+	 * @param bool                             $use_sections               Whether Groups convert to sections.
+	 * @param bool                             $is_stopped                 Set to true at `core/more` in snippet mode.
 	 * @return array<int, array<string, mixed>>
 	 * @since 1.0.0
 	 */
 	private static function convert_blocks(
 		array $wp_blocks,
 		WP_Post $post_object,
-		bool $is_send_newsletter_snippet
+		bool $is_send_newsletter_snippet,
+		bool $use_sections,
+		bool &$is_stopped
 	): array {
-		$beehiiv_blocks = [];
+		$beehiiv_blocks    = [];
+		$snippet_permalink = $is_send_newsletter_snippet ? (string) get_permalink( $post_object ) : '';
 
 		foreach ( $wp_blocks as $wp_block ) {
 			if ( empty( $wp_block['blockName'] ) ) {
@@ -107,8 +118,31 @@ final class BlockConverter {
 			$block_name = (string) $wp_block['blockName'];
 
 			if ( $is_send_newsletter_snippet && 'core/more' === $block_name ) {
-				$beehiiv_blocks[] = self::convert_more_block( (string) get_permalink( $post_object ) );
+				$beehiiv_blocks[] = self::convert_more_block( $snippet_permalink );
+				$is_stopped       = true;
 				break;
+			}
+
+			if ( $use_sections && SupportedBlocks::SECTION_BLOCK === $block_name ) {
+				$section_block = self::convert_section_block(
+					self::convert_blocks(
+						$wp_block['innerBlocks'] ?? [],
+						$post_object,
+						$is_send_newsletter_snippet,
+						true,
+						$is_stopped
+					)
+				);
+
+				if ( ! empty( $section_block ) ) {
+					$beehiiv_blocks[] = $section_block;
+				}
+
+				if ( $is_stopped ) {
+					break;
+				}
+
+				continue;
 			}
 
 			if ( ! SupportedBlocks::is_supported( $block_name, $is_send_newsletter_snippet ) ) {
@@ -127,10 +161,15 @@ final class BlockConverter {
 				continue;
 			}
 
-			$beehiiv_block = self::convert_block( $wp_block );
+			$beehiiv_block = self::convert_block( $wp_block, $use_sections, $snippet_permalink, $is_stopped );
 
 			if ( ! empty( $beehiiv_block ) ) {
 				$beehiiv_blocks[] = $beehiiv_block;
+			}
+
+			// A `core/more` in a section inside the block (e.g. Media & Text) ends the conversion.
+			if ( $is_stopped ) {
+				break;
 			}
 		}
 
@@ -138,13 +177,44 @@ final class BlockConverter {
 	}
 
 	/**
+	 * Wrap a Group's converted inner blocks in a beehiiv section block.
+	 *
+	 * The section sends no settings, so beehiiv applies its API defaults. A Group with
+	 * no converted inner blocks produces no section.
+	 *
+	 * @param array<int, array<string, mixed>> $inner_blocks Converted inner blocks, in order.
+	 * @return array<string, mixed> Section block, or an empty array.
+	 * @since x.x.x
+	 */
+	public static function convert_section_block( array $inner_blocks ): array {
+		$inner_blocks = array_values( array_filter( $inner_blocks ) );
+
+		if ( empty( $inner_blocks ) ) {
+			return [];
+		}
+
+		return [
+			'type'   => 'section',
+			'blocks' => $inner_blocks,
+		];
+	}
+
+	/**
 	 * Convert a single supported WordPress block.
 	 *
-	 * @param array<string, mixed> $wp_block Parsed block.
+	 * @param array<string, mixed> $wp_block          Parsed block.
+	 * @param bool                 $use_sections      Whether Groups convert to sections.
+	 * @param string               $snippet_permalink Post permalink in snippet mode; empty otherwise.
+	 * @param bool                 $is_stopped        Set to true at `core/more` in a section in snippet mode.
 	 * @return array<string, mixed>
 	 * @since 1.0.0
 	 */
-	private static function convert_block( array $wp_block ): array {
+	private static function convert_block(
+		array $wp_block,
+		bool $use_sections = false,
+		string $snippet_permalink = '',
+		bool &$is_stopped = false
+	): array {
 		switch ( $wp_block['blockName'] ) {
 			case 'core/heading':
 				return self::convert_heading_block( $wp_block );
@@ -165,7 +235,7 @@ final class BlockConverter {
 			case 'core/embed':
 				return self::convert_embed_block( $wp_block );
 			case 'core/media-text':
-				return self::convert_media_text_block( $wp_block );
+				return self::convert_media_text_block( $wp_block, $use_sections, $snippet_permalink, $is_stopped );
 			case 'beehiiv/advertisement':
 				return self::convert_advertisement_block( $wp_block );
 		}
@@ -571,13 +641,25 @@ final class BlockConverter {
 	 * Convert nested inner blocks inside a layout block to beehiiv blocks.
 	 *
 	 * Used by layout blocks such as columns and media-text. Unsupported blocks are
-	 * skipped; snippet-only blocks are omitted.
+	 * skipped; snippet-only blocks are omitted outside sections. Groups convert to
+	 * sections when the post uses sections. In snippet mode, a `core/more` inside a
+	 * section adds the Read More button and ends the whole conversion, as at the top level.
 	 *
-	 * @param array<int, array<string, mixed>> $wp_blocks Parsed inner blocks.
+	 * @param array<int, array<string, mixed>> $wp_blocks         Parsed inner blocks.
+	 * @param bool                             $use_sections      Whether Groups convert to sections.
+	 * @param string                           $snippet_permalink Post permalink in snippet mode; empty otherwise.
+	 * @param bool                             $in_section        Whether the blocks are inside a section.
+	 * @param bool                             $is_stopped        Set to true at `core/more` in a snippet section.
 	 * @return array<int, array<string, mixed>>
 	 * @since 1.0.0
 	 */
-	private static function convert_layout_block_inner_blocks( array $wp_blocks ): array {
+	private static function convert_layout_block_inner_blocks(
+		array $wp_blocks,
+		bool $use_sections = false,
+		string $snippet_permalink = '',
+		bool $in_section = false,
+		bool &$is_stopped = false
+	): array {
 		$beehiiv_blocks = [];
 
 		foreach ( $wp_blocks as $wp_block ) {
@@ -586,6 +668,34 @@ final class BlockConverter {
 			}
 
 			$block_name = (string) $wp_block['blockName'];
+
+			if ( $in_section && '' !== $snippet_permalink && 'core/more' === $block_name ) {
+				$beehiiv_blocks[] = self::convert_more_block( $snippet_permalink );
+				$is_stopped       = true;
+				break;
+			}
+
+			if ( $use_sections && SupportedBlocks::SECTION_BLOCK === $block_name ) {
+				$section_block = self::convert_section_block(
+					self::convert_layout_block_inner_blocks(
+						$wp_block['innerBlocks'] ?? [],
+						true,
+						$snippet_permalink,
+						true,
+						$is_stopped
+					)
+				);
+
+				if ( ! empty( $section_block ) ) {
+					$beehiiv_blocks[] = $section_block;
+				}
+
+				if ( $is_stopped ) {
+					break;
+				}
+
+				continue;
+			}
 
 			if ( 'core/buttons' === $block_name ) {
 				$beehiiv_blocks = array_merge( $beehiiv_blocks, self::convert_buttons_block( $wp_block ) );
@@ -601,10 +711,14 @@ final class BlockConverter {
 				continue;
 			}
 
-			$beehiiv_block = self::convert_block( $wp_block );
+			$beehiiv_block = self::convert_block( $wp_block, $use_sections, $snippet_permalink, $is_stopped );
 
 			if ( ! empty( $beehiiv_block ) ) {
 				$beehiiv_blocks[] = $beehiiv_block;
+			}
+
+			if ( $is_stopped ) {
+				break;
 			}
 		}
 
@@ -961,11 +1075,23 @@ final class BlockConverter {
 	 * inner blocks. Blocks with video media are omitted entirely. Respects media
 	 * position, column widths, vertical alignment, and mobile stacking.
 	 *
-	 * @param array<string, mixed> $wp_block Parsed block.
+	 * In snippet mode, a `core/more` inside a section in the content column ends that
+	 * column with the Read More button and sets `$is_stopped`, so the caller converts
+	 * no later block.
+	 *
+	 * @param array<string, mixed> $wp_block          Parsed block.
+	 * @param bool                 $use_sections      Whether Groups in the content column convert to sections.
+	 * @param string               $snippet_permalink Post permalink in snippet mode; empty otherwise.
+	 * @param bool                 $is_stopped        Set to true at `core/more` in a section in snippet mode.
 	 * @return array<string, mixed>
 	 * @since 1.0.0
 	 */
-	public static function convert_media_text_block( array $wp_block ): array {
+	public static function convert_media_text_block(
+		array $wp_block,
+		bool $use_sections = false,
+		string $snippet_permalink = '',
+		bool &$is_stopped = false
+	): array {
 		$attrs        = $wp_block['attrs'] ?? [];
 		$inner_html   = (string) ( $wp_block['innerHTML'] ?? '' );
 		$inner_blocks = $wp_block['innerBlocks'] ?? [];
@@ -980,13 +1106,25 @@ final class BlockConverter {
 		$content_width   = max( 1, min( 100, 100 - $media_width ) );
 
 		$media_blocks   = self::convert_media_text_media_blocks( $attrs, $inner_html );
-		$content_blocks = self::convert_layout_block_inner_blocks( $inner_blocks );
+		$content_blocks = self::convert_layout_block_inner_blocks(
+			$inner_blocks,
+			$use_sections,
+			$snippet_permalink,
+			false,
+			$is_stopped
+		);
 
 		if ( empty( $content_blocks ) && '' !== $inner_html ) {
 			$content_html = MediaTextBlockConverter::extract_content_inner_html( $inner_html );
 
 			if ( '' !== $content_html ) {
-				$content_blocks = self::convert_layout_block_inner_blocks( parse_blocks( $content_html ) );
+				$content_blocks = self::convert_layout_block_inner_blocks(
+					parse_blocks( $content_html ),
+					$use_sections,
+					$snippet_permalink,
+					false,
+					$is_stopped
+				);
 			}
 		}
 

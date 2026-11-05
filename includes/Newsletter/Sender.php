@@ -378,6 +378,8 @@ final class Sender {
 		delete_post_meta( $post_id, Meta::BEEHIIV_POST_ID );
 		delete_post_meta( $post_id, Meta::BEEHIIV_SCHEDULED_AT );
 		self::clear_linked_publication( $post_id );
+		// The link is gone, so the next beehiiv post counts as a first sync.
+		SectionConversion::forget( $post_id );
 		delete_post_meta( $post_id, Meta::BEEHIIV_NEWSLETTER_SENT );
 		delete_post_meta( $post_id, Meta::BEEHIIV_SYNCED_SUBTITLE );
 		update_post_meta( $post_id, Meta::SEND_TO_NEWSLETTER, true );
@@ -504,6 +506,8 @@ final class Sender {
 			return;
 		}
 
+		// Decide before the link exists: an unrecorded linked post counts as linked before sections.
+		$uses_sections     = SectionConversion::uses_sections( $post_id );
 		$beehiiv_post_data = PostSettingsBuilder::get_post_settings( $post_id, false, $publication_id );
 
 		if ( is_wp_error( $beehiiv_post_data ) ) {
@@ -535,6 +539,7 @@ final class Sender {
 			$publication_id,
 			(string) ( $beehiiv_post_data['post_template_id'] ?? '' )
 		);
+		SectionConversion::record( $post_id, $uses_sections );
 		update_post_meta( $post_id, Meta::BEEHIIV_POST_ID, $result['post_id'] );
 		update_post_meta( $post_id, Meta::SEND_TO_NEWSLETTER, false );
 		delete_post_meta( $post_id, Meta::BEEHIIV_NEWSLETTER_SENT );
@@ -750,6 +755,9 @@ final class Sender {
 		string $scheduled_at,
 		array $meta
 	): void {
+		// Keep the post's conversion on the new beehiiv post, even if the link is lost on failure.
+		SectionConversion::record( $post_id, SectionConversion::uses_sections( $post_id ) );
+
 		$create_payload = PostSettingsBuilder::get_post_settings( $post_id, true, $to_publication_id );
 
 		if ( is_wp_error( $create_payload ) ) {
