@@ -25,8 +25,9 @@ final class Options {
 	 * @var array<string, mixed>
 	 */
 	private const DEFAULTS = [
-		'publication_id'   => '',
-		'post_template_id' => '',
+		'publication_id'        => '',
+		'post_template_id'      => '',
+		'require_post_template' => false,
 	];
 
 	/**
@@ -59,7 +60,36 @@ final class Options {
 			$saved = [];
 		}
 
-		return wp_parse_args( $saved, self::DEFAULTS );
+		$settings = wp_parse_args( $saved, self::DEFAULTS );
+
+		$settings['require_post_template'] = self::is_checked( $settings['require_post_template'] );
+
+		return $settings;
+	}
+
+	/**
+	 * Whether editors must choose a post template for each post.
+	 *
+	 * When true, the site default post template is never used for sending.
+	 *
+	 * @return bool
+	 * @since x.x.x
+	 */
+	public static function is_post_template_required(): bool {
+		return self::get()['require_post_template'];
+	}
+
+	/**
+	 * Whether a stored or submitted checkbox value means on.
+	 *
+	 * Anything other than true or "1" is off.
+	 *
+	 * @param mixed $value Raw value.
+	 * @return bool
+	 * @since x.x.x
+	 */
+	private static function is_checked( $value ): bool {
+		return true === $value || 1 === $value || '1' === $value;
 	}
 
 	/**
@@ -88,8 +118,9 @@ final class Options {
 		}
 
 		return [
-			'publication_id'   => $publication_id,
-			'post_template_id' => $post_template_id,
+			'publication_id'        => $publication_id,
+			'post_template_id'      => $post_template_id,
+			'require_post_template' => self::is_checked( $input['require_post_template'] ?? false ),
 		];
 	}
 }

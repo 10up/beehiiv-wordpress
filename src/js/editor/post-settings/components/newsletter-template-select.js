@@ -29,9 +29,12 @@ export default function NewsletterTemplateSelect( {
 	isDefaultPublication,
 	disabled = false,
 } ) {
-	const { defaultPostTemplateId: siteDefaultPostTemplateId } =
-		useBeehiivEditorConfig();
-	// Only the site-wide default publication has a default template.
+	const {
+		defaultPostTemplateId: siteDefaultPostTemplateId,
+		requirePostTemplate,
+	} = useBeehiivEditorConfig();
+	// Only the site-wide default publication has a default template. The config
+	// sends it empty when the site requires editors to choose a template.
 	const defaultPostTemplateId = isDefaultPublication
 		? siteDefaultPostTemplateId
 		: '';
@@ -153,12 +156,39 @@ export default function NewsletterTemplateSelect( {
 		if ( ! selectedValue ) {
 			opts.unshift( {
 				value: '',
-				label: __( 'Select a template', 'beehiiv' ),
+				label: requirePostTemplate
+					? __( 'Choose a template', 'beehiiv' )
+					: __( 'Select a template', 'beehiiv' ),
 			} );
 		}
 
 		return opts;
-	}, [ templates, value, selectedValue, defaultPostTemplateId ] );
+	}, [
+		templates,
+		value,
+		selectedValue,
+		defaultPostTemplateId,
+		requirePostTemplate,
+	] );
+
+	// Names the template used when the post has none of its own. The config
+	// sends no default template when the site requires editors to choose one.
+	let defaultHelp;
+
+	if ( defaultPostTemplateId && ! requirePostTemplate ) {
+		const defaultTemplate = templates.find(
+			( item ) => item?.id === defaultPostTemplateId
+		);
+
+		defaultHelp = sprintf(
+			/* translators: %s: default post template name */
+			__(
+				'If you don\'t choose a template, this post uses the default template "%s".',
+				'beehiiv'
+			),
+			defaultTemplate?.name || defaultPostTemplateId
+		);
+	}
 
 	if ( isLoading && options.length === 0 ) {
 		return (
@@ -185,7 +215,7 @@ export default function NewsletterTemplateSelect( {
 								"The template can't be changed once the newsletter is in beehiiv.",
 								'beehiiv'
 						  )
-						: undefined
+						: defaultHelp
 				}
 				disabled={ disabled || isLoading }
 				__nextHasNoMarginBottom

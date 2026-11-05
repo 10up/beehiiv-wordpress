@@ -1019,6 +1019,12 @@ final class Sender {
 				);
 			case 'beehiiv_post_template_required':
 				return __( "Pick a post template for this post's publication in the beehiiv sidebar.", 'beehiiv' );
+			case 'beehiiv_post_template_not_chosen':
+				return __(
+					// phpcs:ignore Generic.Files.LineLength.MaxExceeded,Generic.Files.LineLength.TooLong -- Single string for translators / i18n tools.
+					'The newsletter was not sent to beehiiv because no post template was chosen. Choose a post template for this post in the beehiiv sidebar, then update the post.',
+					'beehiiv'
+				);
 			case 'beehiiv_publication_missing':
 				return self::no_post_publication_message();
 			case 'beehiiv_post_title_or_content_empty':
