@@ -81,6 +81,11 @@ final class PostSettings {
 			'default'  => '',
 			'readonly' => true,
 		],
+		Meta::BEEHIIV_GROUP_SECTIONS         => [
+			'type'     => 'string',
+			'default'  => '',
+			'readonly' => true,
+		],
 		Meta::NEWSLETTER_ERROR               => [
 			'type'     => 'string',
 			'default'  => '',
@@ -358,6 +363,7 @@ final class PostSettings {
 			[
 				Meta::BEEHIIV_POST_ID,
 				Meta::BEEHIIV_SCHEDULED_AT,
+				Meta::BEEHIIV_GROUP_SECTIONS,
 				Meta::BEEHIIV_PUBLICATION_ID,
 				Meta::SEND_TO_NEWSLETTER,
 				Meta::NEWSLETTER_ERROR,

@@ -13,6 +13,7 @@ import { store as editorStore } from '@wordpress/editor';
 import {
 	META_BEEHIIV_POST_ID,
 	META_BEEHIIV_SCHEDULED_AT,
+	META_BEEHIIV_GROUP_SECTIONS,
 	META_NEWSLETTER_ERROR,
 	META_NEWSLETTER_ERROR_TYPE,
 	META_SEND_TO_NEWSLETTER,
@@ -139,6 +140,8 @@ export function useBeehiivPostMeta() {
 			[ META_BEEHIIV_POST_ID ]: serverBeehiivPostId,
 			[ META_BEEHIIV_SCHEDULED_AT ]:
 				serverMeta[ META_BEEHIIV_SCHEDULED_AT ] ?? '',
+			[ META_BEEHIIV_GROUP_SECTIONS ]:
+				serverMeta[ META_BEEHIIV_GROUP_SECTIONS ] ?? '',
 			[ META_NEWSLETTER_ERROR ]:
 				serverMeta[ META_NEWSLETTER_ERROR ] ?? '',
 			[ META_NEWSLETTER_ERROR_TYPE ]:

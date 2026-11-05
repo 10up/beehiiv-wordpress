@@ -80,6 +80,16 @@ final class Meta {
 	public const BEEHIIV_SCHEDULED_AT = '_beehiiv_scheduled_at';
 
 	/**
+	 * Whether Group blocks are sent to beehiiv as sections: `1` yes, `0` no (left out).
+	 *
+	 * Set when the post's first beehiiv post is created. Empty on a linked post means it
+	 * was linked before the section change. See `Beehiiv\Newsletter\SectionConversion`.
+	 *
+	 * @since x.x.x
+	 */
+	public const BEEHIIV_GROUP_SECTIONS = '_beehiiv_group_sections';
+
+	/**
 	 * Whether beehiiv has already sent the linked newsletter. Internal; not exposed to REST.
 	 *
 	 * Once set, later saves never contact beehiiv for this post.

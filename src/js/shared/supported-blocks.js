@@ -6,9 +6,10 @@
 
 /**
  * @typedef {Object} BeehiivBlockSupportConfig
- * @property {string[]} supported   Blocks converted to beehiiv newsletter blocks.
- * @property {string[]} nestedOnly  Inner blocks handled by a parent.
- * @property {string[]} snippetOnly Blocks only used in snippet newsletter mode.
+ * @property {string[]} supported    Blocks converted to beehiiv newsletter blocks.
+ * @property {string[]} nestedOnly   Inner blocks handled by a parent.
+ * @property {string[]} snippetOnly  Blocks only used in snippet newsletter mode.
+ * @property {string}   sectionBlock Block sent as a beehiiv section in posts that use sections.
  */
 
 /** @type {BeehiivBlockSupportConfig} */
@@ -16,6 +17,7 @@ const DEFAULT_CONFIG = {
 	supported: [],
 	nestedOnly: [],
 	snippetOnly: [],
+	sectionBlock: '',
 };
 
 /**
@@ -27,7 +29,7 @@ function getConfig() {
 		window.beehiivBlockSupport &&
 		typeof window.beehiivBlockSupport === 'object'
 	) {
-		return window.beehiivBlockSupport;
+		return { ...DEFAULT_CONFIG, ...window.beehiivBlockSupport };
 	}
 
 	return DEFAULT_CONFIG;
@@ -93,18 +95,48 @@ export function isMediaTextWithUnsupportedVideo( block ) {
 }
 
 /**
+ * Whether the sync sends the post's Group blocks as beehiiv sections.
+ *
+ * Matches `Beehiiv\Newsletter\SectionConversion::uses_sections()` (PHP): `1` means
+ * sections and `0` means Groups are left out. A post linked to beehiiv without a
+ * record was linked before the section change, so it leaves Groups out.
+ *
+ * @param {string|undefined}      groupSections Stored `_beehiiv_group_sections` meta.
+ * @param {string|null|undefined} beehiivPostId Linked beehiiv post ID, if any.
+ * @return {boolean} True when Groups are sent as sections.
+ */
+export function sendsGroupsAsSections( groupSections, beehiivPostId ) {
+	if ( '1' === groupSections ) {
+		return true;
+	}
+
+	if ( '0' === groupSections ) {
+		return false;
+	}
+
+	return ! ( typeof beehiivPostId === 'string' && beehiivPostId.length > 0 );
+}
+
+/**
  * Whether a block is omitted from the beehiiv newsletter payload.
  *
- * @param {{ name?: string, attributes?: { mediaType?: string } }} block Parsed block.
+ * @param {{ name?: string, attributes?: { mediaType?: string } }} block        Parsed block.
+ * @param {boolean}                                                usesSections Whether the post sends Groups as sections.
  * @return {boolean} True when the block will not be sent.
  */
-export function isOmittedFromNewsletter( block ) {
+export function isOmittedFromNewsletter( block, usesSections = false ) {
 	if ( ! block?.name ) {
 		return false;
 	}
 
 	if ( isMediaTextWithUnsupportedVideo( block ) ) {
 		return true;
+	}
+
+	const { sectionBlock } = getConfig();
+
+	if ( usesSections && sectionBlock && block.name === sectionBlock ) {
+		return false;
 	}
 
 	return shouldWarnUnsupportedBlock( block.name );
