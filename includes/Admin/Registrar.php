@@ -86,6 +86,17 @@ final class Registrar {
 				'label_for' => 'beehiiv_post_template_id',
 			]
 		);
+
+		add_settings_field(
+			'beehiiv_require_post_template',
+			__( 'Require editors to choose a post template', 'beehiiv' ),
+			[ self::class, 'render_require_post_template_field' ],
+			$page_slug,
+			self::PAGE_SETTINGS_SECTION_ID,
+			[
+				'label_for' => 'beehiiv_require_post_template',
+			]
+		);
 	}
 
 	/**
@@ -238,6 +249,34 @@ final class Registrar {
 			<?php
 			esc_html_e(
 				'Default newsletter template for this site. Refresh after changing templates in beehiiv.',
+				'beehiiv'
+			);
+			?>
+		</p>
+		<?php
+	}
+
+	/**
+	 * Require post template toggle.
+	 *
+	 * @since x.x.x
+	 */
+	public static function render_require_post_template_field(): void {
+		$settings = Options::get();
+		$name     = Config::OPTION_NAME . '[require_post_template]';
+		?>
+		<input
+			type="checkbox"
+			id="beehiiv_require_post_template"
+			name="<?php echo esc_attr( $name ); ?>"
+			value="1"
+			<?php checked( $settings['require_post_template'] ); ?>
+		/>
+		<p class="description">
+			<?php
+			esc_html_e(
+				// phpcs:ignore Generic.Files.LineLength.MaxExceeded,Generic.Files.LineLength.TooLong -- Single string for translators / i18n tools.
+				'Editors must choose a post template for each post. A post without one still publishes on the site, but it is not sent to beehiiv. The default post template is not used while this is on.',
 				'beehiiv'
 			);
 			?>

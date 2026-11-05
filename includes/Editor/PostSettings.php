@@ -403,7 +403,11 @@ final class PostSettings {
 			'hasPublication'        => '' !== trim( (string) ( $settings['publication_id'] ?? '' ) ),
 			'hasPostTemplate'       => '' !== trim( (string) ( $settings['post_template_id'] ?? '' ) ),
 			'publicationId'         => trim( (string) ( $settings['publication_id'] ?? '' ) ),
-			'defaultPostTemplateId' => trim( (string) ( $settings['post_template_id'] ?? '' ) ),
+			// The default template is never used while editors must choose one.
+			'defaultPostTemplateId' => $settings['require_post_template']
+				? ''
+				: trim( (string) ( $settings['post_template_id'] ?? '' ) ),
+			'requirePostTemplate'   => $settings['require_post_template'],
 			'canPublishPosts'       => current_user_can( 'publish_posts' ),
 			'defaultPublicationId'  => $default_pub_id,
 			'publications'          => $is_connected ? PublicationResolver::get_editor_publications() : [],

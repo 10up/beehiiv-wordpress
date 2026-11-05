@@ -12,6 +12,7 @@ const DEFAULT_CONFIG = {
 	hasPostTemplate: false,
 	publicationId: '',
 	defaultPostTemplateId: '',
+	requirePostTemplate: false,
 	canPublishPosts: false,
 	defaultPublicationId: '',
 	publications: [],

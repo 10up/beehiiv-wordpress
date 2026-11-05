@@ -59,6 +59,13 @@ final class PostSettingsBuilder {
 
 		$post_template_id = self::resolve_post_template_id( $post_id, $publication_id );
 
+		if ( '' === $post_template_id && Options::is_post_template_required() ) {
+			return new WP_Error(
+				'beehiiv_post_template_not_chosen',
+				sprintf( 'No post template is chosen for post ID: %d, and the site requires one.', $post_id )
+			);
+		}
+
 		if ( '' === $post_template_id && PublicationResolver::get_default_publication_id() !== $publication_id ) {
 			return new WP_Error(
 				'beehiiv_post_template_required',
@@ -441,6 +448,11 @@ final class PostSettingsBuilder {
 	 * which is the only publication that has a default template. Empty when
 	 * neither applies.
 	 *
+	 * When the site requires editors to choose a template, the default template
+	 * is never used. A post already linked to beehiiv keeps the template its
+	 * newsletter was created with. Linked posts with no recorded template predate
+	 * that record, so they keep the default fallback.
+	 *
 	 * @since x.x.x
 	 *
 	 * @param int    $post_id        Post ID.
@@ -457,11 +469,56 @@ final class PostSettingsBuilder {
 			return $post_template_id;
 		}
 
+		if ( Options::is_post_template_required() ) {
+			$linked_template_id = self::get_linked_post_template_id( $post_id, $publication_id );
+
+			if ( null !== $linked_template_id ) {
+				return $linked_template_id;
+			}
+		}
+
 		if ( '' !== $publication_id && PublicationResolver::get_default_publication_id() === $publication_id ) {
 			return self::get_site_post_template_id();
 		}
 
 		return '';
+	}
+
+	/**
+	 * Template to use for a post when the site requires a chosen template.
+	 *
+	 * Empty for an unlinked post, or for a linked post moving to another
+	 * publication. The recorded template for a linked post in its own
+	 * publication. Null for a linked post with no recorded template, so the
+	 * caller keeps the default fallback for it.
+	 *
+	 * @since x.x.x
+	 *
+	 * @param int    $post_id        Post ID.
+	 * @param string $publication_id Publication ID.
+	 *
+	 * @return string|null
+	 */
+	private static function get_linked_post_template_id( int $post_id, string $publication_id ): ?string {
+
+		$beehiiv_post_id = get_post_meta( $post_id, Meta::BEEHIIV_POST_ID, true );
+
+		if ( ! is_string( $beehiiv_post_id ) || '' === trim( $beehiiv_post_id ) ) {
+			return '';
+		}
+
+		$linked_template_id = get_post_meta( $post_id, Meta::BEEHIIV_LINKED_POST_TEMPLATE_ID, true );
+		$linked_template_id = is_string( $linked_template_id ) ? trim( $linked_template_id ) : '';
+
+		if ( '' === $linked_template_id ) {
+			return null;
+		}
+
+		if ( PublicationResolver::get_linked_publication_id( $post_id ) !== $publication_id ) {
+			return '';
+		}
+
+		return $linked_template_id;
 	}
 
 	/**
